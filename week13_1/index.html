@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sound Match: Light Theme</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/p5.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.6.0/addons/p5.sound.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #f2f2f7; /* iOS 浅灰背景 */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        h1 {
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #1c1c1e;
+        }
+        
+        /* 卡片容器 */
+        .ui-panel {
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.08); /* 柔和阴影 */
+            text-align: center;
+            width: 820px;
+        }
+
+        /* 下拉菜单 */
+        .select-container {
+            margin-bottom: 20px;
+        }
+        select {
+            padding: 8px 16px;
+            font-size: 16px;
+            border-radius: 8px;
+            border: 1px solid #d1d1d6;
+            background-color: #f2f2f7;
+            color: #333;
+            font-family: inherit;
+            outline: none;
+            cursor: pointer;
+        }
+
+        /* 按钮组 */
+        .controls {
+            margin-top: 25px;
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+        
+        button {
+            padding: 10px 24px;
+            font-size: 15px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        
+        /* 按钮颜色系统 */
+        .btn-target { background-color: #FF9500; color: white; } /* 橙色 */
+        .btn-target:hover { background-color: #e08900; }
+        
+        .btn-play { background-color: #007AFF; color: white; } /* 蓝色 */
+        .btn-play:hover { background-color: #0062cc; }
+        
+        .btn-check { background-color: #34C759; color: white; } /* 绿色 */
+        .btn-check:hover { background-color: #2da84e; }
+
+        #feedback {
+            margin-top: 20px;
+            height: 20px;
+            font-size: 14px;
+            color: #8e8e93;
+            font-weight: 500;
+        }
+        
+        #canvas-container {
+            border-radius: 12px;
+            overflow: hidden;
+            /* box-shadow: inset 0 0 20px rgba(0,0,0,0.02); */
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🔊 音频复刻挑战</h1>
+
+    <div class="ui-panel">
+        <div class="select-container">
+            <label for="song-select" style="margin-right:10px; color:#666;">当前任务:</label>
+            <select id="song-select" onchange="changeSong()">
+                <option value="iphone">📱 iPhone (Opening)</option>
+                <option value="windows">💻 Windows XP (Startup)</option>
+                <option value="mario">🍄 Super Mario (Intro)</option>
+            </select>
+        </div>
+
+        <div id="canvas-container"></div>
+        
+        <div class="controls">
+            <button class="btn-target" onclick="playTarget()">👂 听目标原声</button>
+            <button class="btn-play" onclick="playUser()">▶️ 播放我的序列</button>
+            <button class="btn-check" onclick="checkMatch()">✅ 提交评分</button>
+        </div>
+        <div id="feedback">选择任务并开始调整滑块...</div>
+    </div>
+
+<script>
+// --- 全局配置 ---
+const NUM_STEPS = 12;
+const STEP_DURATION = 180; 
+let sliders = [];
+let oscillator, envelope;   
+let isPlaying = false;
+let currentPlayStep = -1;
+let playTimer;
+
+// --- 曲库数据 ---
+const songs = {
+    iphone: [
+        { pitch: 0.60, sustain: false, mute: false },
+        { pitch: 0.50, sustain: false, mute: false },
+        { pitch: 0.60, sustain: false, mute: false },
+        { pitch: 0.50, sustain: false, mute: true }, 
+        { pitch: 0.90, sustain: false, mute: false },
+        { pitch: 0.60, sustain: false, mute: false },
+        { pitch: 0.40, sustain: false, mute: false },
+        { pitch: 0.90, sustain: false, mute: false },
+        { pitch: 0.00, sustain: false, mute: true }, 
+        { pitch: 0.60, sustain: false, mute: false },
+        { pitch: 0.90, sustain: false, mute: false },
+        { pitch: 0.50, sustain: true,  mute: false } 
+    ],
+    windows: [
+        { pitch: 0.20, sustain: false, mute: false },
+        { pitch: 0.20, sustain: false, mute: true  },
+        { pitch: 0.45, sustain: false, mute: false },
+        { pitch: 0.45, sustain: false, mute: true  },
+        { pitch: 0.70, sustain: false, mute: false },
+        { pitch: 0.75, sustain: false, mute: false },
+        { pitch: 0.90, sustain: true,  mute: false },
+        { pitch: 0.90, sustain: true,  mute: false },
+        { pitch: 0.65, sustain: true,  mute: false },
+        { pitch: 0.65, sustain: false, mute: false },
+        { pitch: 0.00, sustain: false, mute: true  },
+        { pitch: 0.00, sustain: false, mute: true  } 
+    ],
+    mario: [
+        { pitch: 0.65, sustain: false, mute: false },
+        { pitch: 0.65, sustain: false, mute: false },
+        { pitch: 0.65, sustain: false, mute: false },
+        { pitch: 0.00, sustain: false, mute: true  },
+        { pitch: 0.50, sustain: false, mute: false },
+        { pitch: 0.65, sustain: false, mute: false },
+        { pitch: 0.00, sustain: false, mute: true  },
+        { pitch: 0.90, sustain: false, mute: false },
+        { pitch: 0.90, sustain: false, mute: true  },
+        { pitch: 0.90, sustain: false, mute: true  },
+        { pitch: 0.20, sustain: false, mute: false },
+        { pitch: 0.20, sustain: false, mute: true  } 
+    ]
+};
+
+let currentTarget = songs.iphone;
+
+// --- p5.js 初始化 ---
+function setup() {
+    let cnv = createCanvas(800, 320);
+    cnv.parent('canvas-container');
+
+    // 音频初始化 (Triangle波形更适合复古/电子音)
+    oscillator = new p5.Oscillator('triangle'); 
+    oscillator.start();
+    oscillator.amp(0); 
+    envelope = new p5.Env();
+    envelope.setADSR(0.01, 0.1, 0.4, 0.1); 
+    envelope.setRange(0.5, 0); 
+
+    // 初始化滑块布局
+    const marginX = 60;
+    const spacing = (width - marginX * 2) / NUM_STEPS;
+    
+    for (let i = 0; i < NUM_STEPS; i++) {
+        let x = marginX + i * spacing;
+        let y = 50;
+        let w = 16;  // 稍微细一点的轨道
+        let h = 200;
+        sliders.push(new StepSlider(x, y, w, h, i));
+    }
+    
+    changeSong(); 
+}
+
+function draw() {
+    background(255); // 纯白背景
+    
+    // 绘制浅灰色的参考线
+    stroke(245);
+    strokeWeight(1);
+    for(let i=0; i<=5; i++) {
+        let y = sliders[0].y + (sliders[0].h / 5) * i;
+        line(20, y, width-20, y);
+    }
+
+    // 绘制滑块轨道 (底部的灰色长条)
+    noStroke();
+    for (let s of sliders) {
+        fill(240); // 浅灰轨道
+        rect(s.x, s.y, s.w, s.h, 10);
+    }
+
+    // 绘制连线 (放在滑块球体后面)
+    noFill();
+    stroke(120, 220, 255); // 浅青蓝色连线
+    strokeWeight(3);
+    beginShape();
+    for (let s of sliders) {
+        if (!s.mute) vertex(s.x + s.w/2, s.handleY);
+    }
+    endShape();
+
+    // 绘制滑块主体
+    for (let s of sliders) s.display();
+}
+
+// --- 逻辑控制 ---
+function changeSong() {
+    let select = document.getElementById('song-select');
+    currentTarget = songs[select.value];
+    let feedback = document.getElementById('feedback');
+    feedback.innerText = "任务已更新，请点击“听目标原声”";
+    feedback.style.color = "#8e8e93";
+}
+
+// --- 滑块类 ---
+class StepSlider {
+    constructor(x, y, w, h, index) {
+        this.x = x; this.y = y; this.w = w; this.h = h; this.index = index;
+        this.pitch = 0.5;
+        this.sustain = false;
+        this.mute = false;
+        this.handleY = y + h * 0.5;
+        this.isDragging = false;
+    }
+
+    display() {
+        this.handleY = this.y + (1 - this.pitch) * this.h;
+        
+        // 1. 音高控制球 (Handle)
+        if (this.mute) {
+            fill(220); // 静音时变灰
+        } else {
+            fill(100, 210, 255); // 青蓝色 (Cyan)
+        }
+        
+        // 播放时的高亮效果
+        if (this.index === currentPlayStep && !this.mute) {
+            stroke(100, 210, 255, 100); 
+            strokeWeight(8); // 外发光
+        } else {
+            noStroke();
+        }
+        
+        ellipse(this.x + this.w/2, this.handleY, 24, 24); // 音高球
+
+        // 2. 底部按钮区
+        let btnY = this.y + this.h + 25;
+        
+        // Sustain 按钮 (浅黄色)
+        this.drawBtn(this.sustain, "Sus", btnY, [255, 210, 80]); 
+        
+        // Mute 按钮 (浅绿色/浅红色)
+        // 设计调整：Mute开启时显示红色，关闭时显示浅绿(代表Active)或者灰色
+        // 这里逻辑：开启Mute = 红色警告色
+        this.drawBtn(this.mute, "Mute", btnY + 25, [255, 100, 100]); 
+    }
+
+    drawBtn(isActive, label, y, activeColor) {
+        if (isActive) fill(activeColor); 
+        else fill(235); // 未激活时的浅灰色
+        
+        noStroke();
+        ellipse(this.x + this.w/2, y, 14, 14);
+        
+        // 标签文字
+        fill(180); 
+        textSize(9); 
+        textAlign(CENTER);
+        text(label, this.x + this.w/2, y + 3); // 稍微居中一点，不放下面了
+    }
+
+    checkHit(mx, my) {
+        // 音高球判定
+        if (dist(mx, my, this.x + this.w/2, this.handleY) < 20) {
+            this.isDragging = true; this.updatePitch(my); return true;
+        }
+        // 轨道点击判定 (辅助体验)
+        if (mx > this.x && mx < this.x + this.w && my > this.y && my < this.y + this.h) {
+             this.isDragging = true; this.updatePitch(my); return true;
+        }
+        
+        let btnY = this.y + this.h + 25;
+        // Sustain 判定
+        if (dist(mx, my, this.x + this.w/2, btnY) < 12) {
+            this.sustain = !this.sustain; return true;
+        }
+        // Mute 判定
+        if (dist(mx, my, this.x + this.w/2, btnY + 25) < 12) {
+            this.mute = !this.mute; return true;
+        }
+        return false;
+    }
+
+    updatePitch(my) {
+        let val = map(my, this.y + this.h, this.y, 0, 1);
+        this.pitch = constrain(val, 0, 1);
+    }
+}
+
+// --- 鼠标交互 ---
+function mousePressed() {
+    userStartAudio();
+    for (let s of sliders) if (s.checkHit(mouseX, mouseY)) break; 
+}
+function mouseDragged() {
+    for (let s of sliders) if (s.isDragging) s.updatePitch(mouseY);
+}
+function mouseReleased() {
+    for (let s of sliders) s.isDragging = false;
+}
+
+// --- 音频引擎 ---
+function getFreq(val) {
+    let note = map(val, 0, 1, 48, 72); // C3 - C5
+    return midiToFreq(note);
+}
+
+function playNote(data) {
+    if (data.mute) return;
+    let freq = getFreq(data.pitch);
+    oscillator.freq(freq, 0.05);
+    let relTime = data.sustain ? 0.3 : 0.05;
+    envelope.setADSR(0.01, 0.05, 0.4, relTime);
+    envelope.play(oscillator, 0, 0.1);
+}
+
+function runSequence(seqData) {
+    if (isPlaying) return;
+    isPlaying = true;
+    currentPlayStep = 0;
+    let count = 0;
+    
+    function next() {
+        if (count >= NUM_STEPS) {
+            isPlaying = false; currentPlayStep = -1; return;
+        }
+        currentPlayStep = count;
+        playNote(seqData[count]);
+        count++;
+        playTimer = setTimeout(next, STEP_DURATION);
+    }
+    next();
+}
+
+// --- 按钮事件 ---
+function playUser() {
+    document.getElementById('feedback').innerText = "▶️ 播放当前滑块序列...";
+    runSequence(sliders);
+}
+function playTarget() {
+    document.getElementById('feedback').innerText = "🎶 正在播放目标样本...";
+    runSequence(currentTarget);
+}
+
+function checkMatch() {
+    if (isPlaying) return;
+    let totalDiff = 0;
+    
+    for (let i = 0; i < NUM_STEPS; i++) {
+        let u = sliders[i];
+        let t = currentTarget[i];
+        
+        if (t.mute) {
+            if (!u.mute) totalDiff += 2.0; 
+        } else {
+            if (u.mute) {
+                totalDiff += 2.0; 
+            } else {
+                let diff = Math.abs(u.pitch - t.pitch);
+                totalDiff += diff * 5; 
+                if (u.sustain !== t.sustain) totalDiff += 0.5;
+            }
+        }
+    }
+
+    let el = document.getElementById('feedback');
+    if (totalDiff < 1.5) {
+        el.innerText = "🎉 完美匹配！听力满分！";
+        el.style.color = "#34C759";
+    } else if (totalDiff < 4.0) {
+        el.innerText = "🤏 非常接近了，注意微调音高...";
+        el.style.color = "#FF9500";
+    } else {
+        el.innerText = "❌ 差异较大，请对比图谱再试 (误差: " + totalDiff.toFixed(1) + ")";
+        el.style.color = "#FF3B30";
+    }
+}
+</script>
+</body>
+</html>
